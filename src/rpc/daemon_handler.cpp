@@ -346,6 +346,11 @@ namespace rpc
       {
         res.error_details = "mixin too low";
       }
+      if (tvc.m_high_mixin)
+      {
+        if (!res.error_details.empty()) res.error_details += " and ";
+        res.error_details = "mixin too high";
+      }
       if (tvc.m_double_spend)
       {
         if (!res.error_details.empty()) res.error_details += " and ";
@@ -381,6 +386,12 @@ namespace rpc
         if (!res.error_details.empty()) res.error_details += " and ";
         res.error_details = "tx is not ringct";
       }
+      if (tvc.m_invalid_tx_version)
+      {
+        if (!res.error_details.empty()) res.error_details += " and ";
+        res.error_details = "invalid tx version";
+      }
+
       if (res.error_details.empty())
       {
         res.error_details = "an unknown issue was found with the transaction";

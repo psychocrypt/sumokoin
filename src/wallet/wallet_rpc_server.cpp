@@ -1,3 +1,4 @@
+// Copyright (c) 2017-2018, Sumokoin Project
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -63,7 +64,7 @@ namespace
   const command_line::arg_descriptor<std::string> arg_wallet_dir = {"wallet-dir", "Directory for newly created wallets"};
   const command_line::arg_descriptor<bool> arg_prompt_for_password = {"prompt-for-password", "Prompts for password when not provided", false};
 
-  constexpr const char default_rpc_username[] = "monero";
+  constexpr const char default_rpc_username[] = "sumokoin";
 
   boost::optional<tools::password_container> password_prompter(const char *prompt, bool verify)
   {
@@ -201,7 +202,7 @@ namespace tools
           string_encoding::base64_encode(rand_128bit.data(), rand_128bit.size())
         );
 
-        std::string temp = "monero-wallet-rpc." + bind_port + ".login";
+        std::string temp = "sumo-wallet-rpc." + bind_port + ".login";
         rpc_login_file = tools::private_file::create(temp);
         if (!rpc_login_file.handle())
         {
@@ -597,7 +598,7 @@ namespace tools
           }
           if (addresses.empty())
           {
-            er.message = std::string("No Monero address found at ") + url;
+            er.message = std::string("No Sumokoin address found at ") + url;
             return {};
           }
           return addresses[0];
@@ -799,6 +800,16 @@ namespace tools
       {
         mixin = m_wallet->adjust_mixin(req.mixin);
       }
+
+      if (mixin < DEFAULT_MIXIN){
+        LOG_PRINT_L1("Requested mixin " << req.mixin << " too low, using " << DEFAULT_MIXIN);
+        mixin = DEFAULT_MIXIN;
+      }
+      else if (mixin > MAX_MIXIN){
+        LOG_PRINT_L1("Requested mixin " << req.mixin << " too high, using " << MAX_MIXIN);
+        mixin = MAX_MIXIN;
+      }
+
       uint32_t priority = m_wallet->adjust_priority(req.priority);
       std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_2(dsts, mixin, req.unlock_time, priority, extra, req.account_index, req.subaddr_indices, m_trusted_daemon);
 
@@ -859,6 +870,16 @@ namespace tools
       {
         mixin = m_wallet->adjust_mixin(req.mixin);
       }
+
+      if (mixin < DEFAULT_MIXIN){
+        LOG_PRINT_L1("Requested mixin " << req.mixin << " too low, using " << DEFAULT_MIXIN);
+        mixin = DEFAULT_MIXIN;
+      }
+      else if (mixin > MAX_MIXIN){
+        LOG_PRINT_L1("Requested mixin " << req.mixin << " too high, using " << MAX_MIXIN);
+        mixin = MAX_MIXIN;
+      }
+
       uint32_t priority = m_wallet->adjust_priority(req.priority);
       LOG_PRINT_L2("on_transfer_split calling create_transactions_2");
       std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_2(dsts, mixin, req.unlock_time, priority, extra, req.account_index, req.subaddr_indices, m_trusted_daemon);
@@ -934,6 +955,16 @@ namespace tools
       {
         mixin = m_wallet->adjust_mixin(req.mixin);
       }
+
+      if (mixin < DEFAULT_MIXIN){
+        LOG_PRINT_L1("Requested mixin " << req.mixin << " too low, using " << DEFAULT_MIXIN);
+        mixin = DEFAULT_MIXIN;
+      }
+      else if (mixin > MAX_MIXIN){
+        LOG_PRINT_L1("Requested mixin " << req.mixin << " too high, using " << MAX_MIXIN);
+        mixin = MAX_MIXIN;
+      }
+
       uint32_t priority = m_wallet->adjust_priority(req.priority);
       std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_all(req.below_amount, dsts[0].addr, dsts[0].is_subaddress, mixin, req.unlock_time, priority, extra, req.account_index, req.subaddr_indices, m_trusted_daemon);
 
@@ -990,6 +1021,16 @@ namespace tools
       {
         mixin = m_wallet->adjust_mixin(req.mixin);
       }
+
+      if (mixin < DEFAULT_MIXIN){
+        LOG_PRINT_L1("Requested mixin " << req.mixin << " too low, using " << DEFAULT_MIXIN);
+        mixin = DEFAULT_MIXIN;
+      }
+      else if (mixin > MAX_MIXIN){
+        LOG_PRINT_L1("Requested mixin " << req.mixin << " too high, using " << MAX_MIXIN);
+        mixin = MAX_MIXIN;
+      }
+
       uint32_t priority = m_wallet->adjust_priority(req.priority);
       std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_single(ki, dsts[0].addr, dsts[0].is_subaddress, mixin, req.unlock_time, priority, extra, m_trusted_daemon);
 
@@ -1430,7 +1471,7 @@ namespace tools
         }
         if (addresses.empty())
         {
-          er.message = std::string("No Monero address found at ") + url;
+          er.message = std::string("No Sumokoin address found at ") + url;
           return {};
         }
         return addresses[0];
@@ -2136,7 +2177,7 @@ namespace tools
         }
         if (addresses.empty())
         {
-          er.message = std::string("No Monero address found at ") + url;
+          er.message = std::string("No Sumokoin address found at ") + url;
           return {};
         }
         return addresses[0];
@@ -2905,12 +2946,12 @@ int main(int argc, char** argv) {
 
   const auto vm = wallet_args::main(
     argc, argv,
-    "monero-wallet-rpc [--wallet-file=<file>|--generate-from-json=<file>|--wallet-dir=<directory>] [--rpc-bind-port=<port>]",
-    tools::wallet_rpc_server::tr("This is the RPC monero wallet. It needs to connect to a monero\ndaemon to work correctly."),
+    "sumo-wallet-rpc [--wallet-file=<file>|--generate-from-json=<file>|--wallet-dir=<directory>] [--rpc-bind-port=<port>]",
+    tools::wallet_rpc_server::tr("This is the RPC sumokoin wallet. It needs to connect to a sumokoin\ndaemon to work correctly."),
     desc_params,
     po::positional_options_description(),
     [](const std::string &s, bool emphasis){ epee::set_console_color(emphasis ? epee::console_color_white : epee::console_color_default, true); std::cout << s << std::endl; if (emphasis) epee::reset_console_color(); },
-    "monero-wallet-rpc.log",
+    "sumo-wallet-rpc.log",
     true
   );
   if (!vm)

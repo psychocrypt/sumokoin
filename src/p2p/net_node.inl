@@ -371,27 +371,31 @@ namespace nodetool
     std::set<std::string> full_addrs;
     if (nettype == cryptonote::TESTNET)
     {
-      full_addrs.insert("212.83.175.67:28080");
-      full_addrs.insert("5.9.100.248:28080");
-      full_addrs.insert("163.172.182.165:28080");
-      full_addrs.insert("195.154.123.123:28080");
-      full_addrs.insert("212.83.172.165:28080");
+      full_addrs.insert("192.99.32.219:29733");
+      full_addrs.insert("144.217.164.165:29733");
+      full_addrs.insert("217.182.76.94:29733");
+      full_addrs.insert("139.99.40.69:29733");
+      full_addrs.insert("46.105.92.108:29733");
     }
     else if (nettype == cryptonote::STAGENET)
     {
-      full_addrs.insert("162.210.173.150:38080");
-      full_addrs.insert("162.210.173.151:38080");
+      full_addrs.insert("192.99.32.219:39733");
+      full_addrs.insert("144.217.164.165:39733");
+      full_addrs.insert("217.182.76.94:39733");
+      full_addrs.insert("139.99.40.69:39733");
+      full_addrs.insert("46.105.92.108:39733");
     }
     else
     {
-      full_addrs.insert("107.152.130.98:18080");
-      full_addrs.insert("212.83.175.67:18080");
-      full_addrs.insert("5.9.100.248:18080");
-      full_addrs.insert("163.172.182.165:18080");
-      full_addrs.insert("161.67.132.39:18080");
-      full_addrs.insert("198.74.231.92:18080");
-      full_addrs.insert("195.154.123.123:18080");
-      full_addrs.insert("212.83.172.165:18080");
+      full_addrs.insert("91.121.81.92:19733");
+      full_addrs.insert("192.99.32.219:19733");
+      full_addrs.insert("144.217.164.165:19733");
+      full_addrs.insert("133.18.53.223:19733");
+      full_addrs.insert("217.182.76.94:19733");
+      full_addrs.insert("46.105.92.108:19733");
+      full_addrs.insert("158.69.242.193:19733");
+      full_addrs.insert("139.99.193.21:19733");
+      full_addrs.insert("139.99.40.69:19733");
     }
     return full_addrs;
   }
@@ -1409,7 +1413,7 @@ namespace nodetool
     }
     rsp.connections_count = m_net_server.get_config_object().get_connections_count();
     rsp.incoming_connections_count = rsp.connections_count - get_outgoing_connections_count();
-    rsp.version = MONERO_VERSION_FULL;
+    rsp.version = SUMOKOIN_VERSION_FULL;
     rsp.os_version = tools::get_os_version_string();
     m_payload_handler.get_stat_info(rsp.payload_info);
     return 1;

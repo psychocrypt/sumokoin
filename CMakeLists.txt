@@ -41,7 +41,7 @@ endif()
 
 cmake_minimum_required(VERSION 2.8.7)
 
-project(monero)
+project(sumokoin)
 
 function (die msg)
   if (NOT WIN32)
@@ -298,7 +298,7 @@ if(SANITIZE)
 endif()
 
 # Set default blockchain storage location:
-# memory was the default in Cryptonote before Monero implemented LMDB, it still works but is unnecessary.
+# memory was the default in Cryptonote before Sumokoin implemented LMDB, it still works but is unnecessary.
 # set(DATABASE memory)
 set(DATABASE lmdb)
 
@@ -741,6 +741,10 @@ else()
       else()
         set(CMAKE_AR "gcc-ar")
         set(CMAKE_RANLIB "gcc-ranlib")
+      endif()
+      # Default ubuntu 16.04 LTS ld.bfd refuses to cooperate with LTO'ed ar libs for some reason, gold linker works, go figure
+      if(NOT ARM)
+        set(RELEASE_FLAGS "${RELEASE_FLAGS} -fuse-ld=gold")
       endif()
     endif()
   endif()

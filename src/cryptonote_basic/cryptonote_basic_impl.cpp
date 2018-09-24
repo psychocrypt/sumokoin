@@ -1,3 +1,4 @@
+// Copyright (c) 2017-2018, Sumokoin Project
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -69,11 +70,7 @@ namespace cryptonote {
   //-----------------------------------------------------------------------------------------------
   size_t get_min_block_size(uint8_t version)
   {
-    if (version < 2)
-      return CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1;
-    if (version < 5)
-      return CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2;
-    return CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5;
+    return CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE;
   }
   //-----------------------------------------------------------------------------------------------
   size_t get_max_block_size()
@@ -86,33 +83,51 @@ namespace cryptonote {
     return CRYPTONOTE_MAX_TX_SIZE;
   }
   //-----------------------------------------------------------------------------------------------
-  bool get_block_reward(size_t median_size, size_t current_block_size, uint64_t already_generated_coins, uint64_t &reward, uint8_t version) {
-    static_assert(DIFFICULTY_TARGET_V2%60==0&&DIFFICULTY_TARGET_V1%60==0,"difficulty targets must be a multiple of 60");
-    const int target = version < 2 ? DIFFICULTY_TARGET_V1 : DIFFICULTY_TARGET_V2;
-    const int target_minutes = target / 60;
-    const int emission_speed_factor = EMISSION_SPEED_FACTOR_PER_MINUTE - (target_minutes-1);
+  bool get_block_reward(size_t median_size, size_t current_block_size, uint64_t already_generated_coins, uint64_t &reward, uint64_t height) {
 
-    uint64_t base_reward = (MONEY_SUPPLY - already_generated_coins) >> emission_speed_factor;
-    if (base_reward < FINAL_SUBSIDY_PER_MINUTE*target_minutes)
+    uint64_t base_reward;
+    uint64_t round_factor = 10000000; // 1 * pow(10, 7)
+    if (height > 0)
     {
-      base_reward = FINAL_SUBSIDY_PER_MINUTE*target_minutes;
+      if (height < (PEAK_COIN_EMISSION_HEIGHT + COIN_EMISSION_HEIGHT_INTERVAL)) {
+        uint64_t interval_num = height / COIN_EMISSION_HEIGHT_INTERVAL;
+        double money_supply_pct = 0.1888 + interval_num*(0.023 + interval_num*0.0032);
+        base_reward = ((uint64_t)(MONEY_SUPPLY * money_supply_pct)) >> EMISSION_SPEED_FACTOR;
+      }
+      else{
+        base_reward = (MONEY_SUPPLY - already_generated_coins) >> EMISSION_SPEED_FACTOR;
+      }
+    }
+    else
+    {
+      base_reward = GENESIS_BLOCK_REWARD;
     }
 
-    uint64_t full_reward_zone = get_min_block_size(version);
+    if (base_reward < FINAL_SUBSIDY){
+      if (MONEY_SUPPLY > already_generated_coins){
+        base_reward = FINAL_SUBSIDY;
+      }
+      else{
+        base_reward = FINAL_SUBSIDY / 2;
+      }
+    }
+
+    // rounding (floor) base reward
+    base_reward = base_reward / round_factor * round_factor;
 
     //make it soft
-    if (median_size < full_reward_zone) {
-      median_size = full_reward_zone;
+    if (median_size < CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE) {
+      median_size = CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE;
     }
 
-    if (current_block_size <= median_size) {
-      reward = base_reward;
-      return true;
-    }
-
-    if(current_block_size > 2 * median_size) {
+    if (current_block_size > 2 * median_size) {
       MERROR("Block cumulative size is too big: " << current_block_size << ", expected less than " << 2 * median_size);
       return false;
+    }
+
+    if (current_block_size <= (median_size < BLOCK_SIZE_GROWTH_FAVORED_ZONE ? median_size * 110 / 100 : median_size)) {
+      reward = base_reward;
+      return true;
     }
 
     assert(median_size < std::numeric_limits<uint32_t>::max());

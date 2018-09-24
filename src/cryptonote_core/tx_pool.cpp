@@ -1,3 +1,4 @@
+// Copyright (c) 2017-2018, Sumokoin Project
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -78,12 +79,7 @@ namespace cryptonote
     uint64_t template_accept_threshold(uint64_t amount)
     {
       return amount * ACCEPT_THRESHOLD;
-    }
-
-    uint64_t get_transaction_size_limit(uint8_t version)
-    {
-      return get_min_block_size(version) - CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE;
-    }
+    }  
 
     // This class is meant to create a batch when none currently exists.
     // If a batch exists, it can't be from another thread, since we can
@@ -113,11 +109,12 @@ namespace cryptonote
     CRITICAL_REGION_LOCAL(m_transactions_lock);
 
     PERF_TIMER(add_tx);
-    if (tx.version == 0)
+    if (tx.version < 2)
     {
-      // v0 never accepted
-      LOG_PRINT_L1("transaction version 0 is invalid");
+      // v0, v1 never accepted
+      LOG_PRINT_L1("transaction version 0 or version 1 is invalid");
       tvc.m_verifivation_failed = true;
+      tvc.m_invalid_tx_version = true;
       return false;
     }
 
@@ -141,38 +138,8 @@ namespace cryptonote
     // fee per kilobyte, size rounded up.
     uint64_t fee;
 
-    if (tx.version == 1)
-    {
-      uint64_t inputs_amount = 0;
-      if(!get_inputs_money_amount(tx, inputs_amount))
-      {
-        tvc.m_verifivation_failed = true;
-        return false;
-      }
-
-      uint64_t outputs_amount = get_outs_money_amount(tx);
-      if(outputs_amount > inputs_amount)
-      {
-        LOG_PRINT_L1("transaction use more money than it has: use " << print_money(outputs_amount) << ", have " << print_money(inputs_amount));
-        tvc.m_verifivation_failed = true;
-        tvc.m_overspend = true;
-        return false;
-      }
-      else if(outputs_amount == inputs_amount)
-      {
-        LOG_PRINT_L1("transaction fee is zero: outputs_amount == inputs_amount, rejecting.");
-        tvc.m_verifivation_failed = true;
-        tvc.m_fee_too_low = true;
-        return false;
-      }
-
-      fee = inputs_amount - outputs_amount;
-    }
-    else
-    {
-      fee = tx.rct_signatures.txnFee;
-    }
-
+    fee = tx.rct_signatures.txnFee;
+    
     if (!kept_by_block && !m_blockchain.check_fee(blob_size, fee))
     {
       tvc.m_verifivation_failed = true;
@@ -180,12 +147,41 @@ namespace cryptonote
       return false;
     }
 
-    size_t tx_size_limit = get_transaction_size_limit(version);
+    size_t tx_size_limit = TRANSACTION_SIZE_LIMIT;
     if (!kept_by_block && blob_size > tx_size_limit)
     {
       LOG_PRINT_L1("transaction is too big: " << blob_size << " bytes, maximum size: " << tx_size_limit);
       tvc.m_verifivation_failed = true;
       tvc.m_too_big = true;
+      return false;
+    }
+
+    bool mixin_too_low = false;
+    bool mixin_too_high = false;
+    for(const auto& in: tx.vin)
+    {
+      CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, txin, false);
+      if (txin.key_offsets.size() - 1 < DEFAULT_MIXIN){
+        mixin_too_low = true;
+        break;
+      }
+      else if (txin.key_offsets.size() - 1 > MAX_MIXIN){
+        mixin_too_high = true;
+        break;
+      }
+    }
+
+    if (!kept_by_block && mixin_too_low){
+      LOG_PRINT_L1("Transaction with id= " << id << " has too low mixin");
+      tvc.m_low_mixin = true;
+      tvc.m_verifivation_failed = true;
+      return false;
+    }
+
+    if (!kept_by_block && mixin_too_high){
+      LOG_PRINT_L1("Transaction with id= " << id << " has too high mixin");
+      tvc.m_high_mixin = true;
+      tvc.m_verifivation_failed = true;
       return false;
     }
 
@@ -248,7 +244,10 @@ namespace cryptonote
           m_blockchain.add_txpool_tx(tx, meta);
           if (!insert_key_images(tx, kept_by_block))
             return false;
-          m_txs_by_fee_and_receive_time.emplace(std::pair<double, std::time_t>(fee / (double)blob_size, receive_time), id);
+
+          // Rounding tx fee/blob_size ratio so that txs with the same priority would be sorted by receive_time
+          uint32_t fee_per_size_ratio = (uint32_t)(fee / (double)blob_size);
+          m_txs_by_fee_and_receive_time.emplace(std::pair<uint32_t, std::time_t>(fee_per_size_ratio, receive_time), id);
         }
         catch (const std::exception &e)
         {
@@ -290,7 +289,9 @@ namespace cryptonote
         m_blockchain.add_txpool_tx(tx, meta);
         if (!insert_key_images(tx, kept_by_block))
           return false;
-        m_txs_by_fee_and_receive_time.emplace(std::pair<double, std::time_t>(fee / (double)blob_size, receive_time), id);
+        // Rounding tx fee/blob_size ratio so that txs with the same priority would be sorted by receive_time
+        uint32_t fee_per_size_ratio = (uint32_t)(fee / (double)blob_size);
+        m_txs_by_fee_and_receive_time.emplace(std::pair<uint32_t, std::time_t>(fee_per_size_ratio, receive_time), id);
       }
       catch (const std::exception &e)
       {
@@ -1068,7 +1069,7 @@ namespace cryptonote
   }
   //---------------------------------------------------------------------------------
   //TODO: investigate whether boolean return is appropriate
-  bool tx_memory_pool::fill_block_template(block &bl, size_t median_size, uint64_t already_generated_coins, size_t &total_size, uint64_t &fee, uint64_t &expected_reward, uint8_t version)
+  bool tx_memory_pool::fill_block_template(block &bl, size_t median_size, uint64_t already_generated_coins, size_t &total_size, uint64_t &fee, uint64_t &expected_reward, uint8_t height)
   {
     // Warning: This function takes already_generated_
     // coins as an argument and appears to do nothing
@@ -1082,12 +1083,9 @@ namespace cryptonote
     fee = 0;
     
     //baseline empty block
-    get_block_reward(median_size, total_size, already_generated_coins, best_coinbase, version);
-
-
-    size_t max_total_size_pre_v5 = (130 * median_size) / 100 - CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE;
-    size_t max_total_size_v5 = 2 * median_size - CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE;
-    size_t max_total_size = version >= 5 ? max_total_size_v5 : max_total_size_pre_v5;
+    get_block_reward(median_size, total_size, already_generated_coins, best_coinbase, height);
+    
+    size_t max_total_size = 2 * median_size - CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE;
     std::unordered_set<crypto::key_image> k_images;
 
     LOG_PRINT_L2("Filling block template, median size " << median_size << ", " << m_txs_by_fee_and_receive_time.size() << " txes in the pool");
@@ -1112,38 +1110,24 @@ namespace cryptonote
         sorted_it++;
         continue;
       }
-
-      // start using the optimal filling algorithm from v5
-      if (version >= 5)
+            
+      // If we're getting lower coinbase tx,
+      // stop including more tx
+      uint64_t block_reward;
+      if(!get_block_reward(median_size, total_size + meta.blob_size, already_generated_coins, block_reward, height))
       {
-        // If we're getting lower coinbase tx,
-        // stop including more tx
-        uint64_t block_reward;
-        if(!get_block_reward(median_size, total_size + meta.blob_size, already_generated_coins, block_reward, version))
-        {
-          LOG_PRINT_L2("  would exceed maximum block size");
-          sorted_it++;
-          continue;
-        }
-        coinbase = block_reward + fee + meta.fee;
-        if (coinbase < template_accept_threshold(best_coinbase))
-        {
-          LOG_PRINT_L2("  would decrease coinbase to " << print_money(coinbase));
-          sorted_it++;
-          continue;
-        }
+        LOG_PRINT_L2("  would exceed maximum block size");
+        sorted_it++;
+        continue;
       }
-      else
+      coinbase = block_reward + fee + meta.fee;
+      if (coinbase < template_accept_threshold(best_coinbase))
       {
-        // If we've exceeded the penalty free size,
-        // stop including more tx
-        if (total_size > median_size)
-        {
-          LOG_PRINT_L2("  would exceed median block size");
-          break;
-        }
+        LOG_PRINT_L2("  would decrease coinbase to " << print_money(coinbase));
+        sorted_it++;
+        continue;
       }
-
+      
       cryptonote::blobdata txblob = m_blockchain.get_txpool_tx_blob(sorted_it->second);
       cryptonote::transaction tx;
       if (!parse_and_validate_tx_from_blob(txblob, tx))
@@ -1203,7 +1187,7 @@ namespace cryptonote
   {
     CRITICAL_REGION_LOCAL(m_transactions_lock);
     CRITICAL_REGION_LOCAL1(m_blockchain);
-    size_t tx_size_limit = get_transaction_size_limit(version);
+    size_t tx_size_limit = TRANSACTION_SIZE_LIMIT;
     std::unordered_set<crypto::hash> remove;
 
     m_txpool_size = 0;
@@ -1290,7 +1274,8 @@ namespace cryptonote
           MFATAL("Failed to insert key images from txpool tx");
           return false;
         }
-        m_txs_by_fee_and_receive_time.emplace(std::pair<double, time_t>(meta.fee / (double)meta.blob_size, meta.receive_time), txid);
+        uint32_t fee_per_size_ratio = (uint32_t)(meta.fee / (double)meta.blob_size);
+        m_txs_by_fee_and_receive_time.emplace(std::pair<uint32_t, time_t>(fee_per_size_ratio, meta.receive_time), txid);
         m_txpool_size += meta.blob_size;
         return true;
       }, true);

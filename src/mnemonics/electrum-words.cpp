@@ -1,3 +1,4 @@
+// Copyright (c) 2017-2018, Sumokoin Project
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -71,7 +72,11 @@ namespace
 {
   uint32_t create_checksum_index(const std::vector<std::string> &word_list,
     uint32_t unique_prefix_length);
+  uint32_t create_checksum_index2(const std::vector<std::string> &seed,
+    uint32_t unique_prefix_length, uint32_t word_list_length);
   bool checksum_test(std::vector<std::string> seed, uint32_t unique_prefix_length);
+  bool checksum_test2(std::vector<std::string> seed, uint32_t unique_prefix_length, 
+    const std::vector<std::string> &word_list);
 
   /*!
    * \brief Finds the word list that contains the seed words and puts the indices
@@ -140,17 +145,6 @@ namespace
       }
       if (full_match)
       {
-        // if we were using prefix only, and we have a checksum, check it now
-        // to avoid false positives due to prefix set being too common
-        if (has_checksum)
-          if (!checksum_test(seed, (*it1)->get_unique_prefix_length()))
-          {
-            fallback = *it1;
-            full_match = false;
-          }
-      }
-      if (full_match)
-      {
         *language = *it1;
         return true;
       }
@@ -198,6 +192,34 @@ namespace
   }
 
   /*!
+  * \brief Creates a checksum index in the word list array on the list of words.
+  * \param  seed                 Vector of seed words plus checksum (generated at create_checksum_index())
+  * \param unique_prefix_length  the prefix length of each word to use for checksum
+  * \param word_list_length      lengh of word list
+  * \return                      Checksum2 index
+  */
+  uint32_t create_checksum_index2(const std::vector<std::string> &seed,
+    uint32_t unique_prefix_length, uint32_t word_list_length)
+  {
+    std::string trimmed_words = "";
+
+    for (std::vector<std::string>::const_iterator it = seed.begin(); it != seed.end(); it++)
+    {
+      if (it->length() > unique_prefix_length)
+      {
+        trimmed_words += Language::utf8prefix(*it, unique_prefix_length);
+      }
+      else
+      {
+        trimmed_words += *it;
+      }
+    }
+    boost::crc_32_type result;
+    result.process_bytes(trimmed_words.data(), trimmed_words.length());
+    return result.checksum() % word_list_length;
+  }
+
+  /*!
    * \brief Does the checksum test on the seed passed.
    * \param seed                  Vector of seed words
    * \param unique_prefix_length  the prefix length of each word to use for checksum
@@ -212,6 +234,28 @@ namespace
     seed.pop_back();
 
     std::string checksum = seed[create_checksum_index(seed, unique_prefix_length)];
+
+    std::string trimmed_checksum = checksum.length() > unique_prefix_length ? Language::utf8prefix(checksum, unique_prefix_length) :
+      checksum;
+    std::string trimmed_last_word = last_word.length() > unique_prefix_length ? Language::utf8prefix(last_word, unique_prefix_length) :
+      last_word;
+    return trimmed_checksum == trimmed_last_word;
+  }
+
+  /*!
+  * \brief Does the checksum test on the seed + prev checksum passed.
+  * \param seed                  Vector of seed words
+  * \param unique_prefix_length  the prefix length of each word to use for checksum
+  * \param word_list             Vector of word list
+  * \return                      True if the test passed false if not.
+  */
+  bool checksum_test2(std::vector<std::string> seed, uint32_t unique_prefix_length, const std::vector<std::string> &word_list)
+  {
+    // The last word is the checksum.
+    std::string last_word = seed.back();
+    seed.pop_back();
+
+    std::string checksum = word_list[create_checksum_index2(seed, unique_prefix_length, word_list.size())];
 
     std::string trimmed_checksum = checksum.length() > unique_prefix_length ? Language::utf8prefix(checksum, unique_prefix_length) :
       checksum;
@@ -252,24 +296,14 @@ namespace crypto
       boost::algorithm::trim(words);
       boost::split(seed, words, boost::is_any_of(" "), boost::token_compress_on);
 
-      if (len % 4)
-        return false;
-
-      bool has_checksum = true;
-      if (len)
+      // error on non-compliant word list
+      if (seed.size() != seed_length + 2)
       {
-        // error on non-compliant word list
-        const size_t expected = len * 8 * 3 / 32;
-        if (seed.size() != expected/2 && seed.size() != expected &&
-          seed.size() != expected + 1)
-        {
-          return false;
-        }
-
-        // If it is seed with a checksum.
-        has_checksum = seed.size() == (expected + 1);
+        return false;
       }
 
+      bool has_checksum = true;
+      
       std::vector<uint32_t> matched_indices;
       Language::Base *language;
       if (!find_seed_language(seed, has_checksum, matched_indices, &language))
@@ -279,8 +313,17 @@ namespace crypto
       language_name = language->get_language_name();
       uint32_t word_list_length = language->get_word_list().size();
 
+      const std::vector<std::string> &word_list = language->get_word_list();
+      
       if (has_checksum)
       {
+        if (!checksum_test2(seed, language->get_unique_prefix_length(), word_list))
+        {
+          // Checksum 2 fail
+          return false;
+        }
+        seed.pop_back();
+
         if (!checksum_test(seed, language->get_unique_prefix_length()))
         {
           // Checksum fail
@@ -303,18 +346,6 @@ namespace crypto
         if (!(val % word_list_length == w1)) return false;
 
         dst.append((const char*)&val, 4);  // copy 4 bytes to position
-      }
-
-      if (len > 0 && duplicate)
-      {
-        const size_t expected = len * 3 / 32;
-        std::string wlist_copy = words;
-        if (seed.size() == expected/2)
-        {
-          dst.append(dst);                    // if electrum 12-word seed, duplicate
-          wlist_copy += ' ';
-          wlist_copy += words;
-        }
       }
 
       return true;
@@ -435,7 +466,11 @@ namespace crypto
       }
 
       words.pop_back();
-      words += (' ' + words_store[create_checksum_index(words_store, language->get_unique_prefix_length())]);
+      std::string checksum_word = words_store[create_checksum_index(words_store, language->get_unique_prefix_length())];
+      words += (' ' + checksum_word);
+      words_store.push_back(checksum_word);
+      words += (' ' + word_list[create_checksum_index2(words_store, language->get_unique_prefix_length(), word_list_length)]);
+
       return true;
     }
 
@@ -485,10 +520,8 @@ namespace crypto
      */
     bool get_is_old_style_seed(std::string seed)
     {
-      std::vector<std::string> word_list;
-      boost::algorithm::trim(seed);
-      boost::split(word_list, seed, boost::is_any_of(" "), boost::token_compress_on);
-      return word_list.size() != (seed_length + 1);
+      // Sumokoin not support old style seed
+      return false;
     }
 
     std::string get_english_name_for(const std::string &name)

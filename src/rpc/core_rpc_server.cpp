@@ -782,6 +782,8 @@ namespace cryptonote
       res.reason = "";
       if ((res.low_mixin = tvc.m_low_mixin))
         add_reason(res.reason, "ring size too small");
+      if ((res.low_mixin = tvc.m_high_mixin))
+        add_reason(res.reason, "ring size too big");
       if ((res.double_spend = tvc.m_double_spend))
         add_reason(res.reason, "double spend");
       if ((res.invalid_input = tvc.m_invalid_input))
@@ -796,6 +798,8 @@ namespace cryptonote
         add_reason(res.reason, "fee too low");
       if ((res.not_rct = tvc.m_not_rct))
         add_reason(res.reason, "tx is not ringct");
+      if ((res.not_rct = tvc.m_invalid_tx_version))
+        add_reason(res.reason, "invalid tx version");
       const std::string punctuation = res.reason.empty() ? "" : ": ";
       if (tvc.m_verifivation_failed)
       {
@@ -1565,7 +1569,7 @@ namespace cryptonote
     res.top_block_hash = string_tools::pod_to_hex(top_hash);
     res.target_height = m_core.get_target_blockchain_height();
     res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block();
-    res.target = m_core.get_blockchain_storage().get_current_hard_fork_version() < 2 ? DIFFICULTY_TARGET_V1 : DIFFICULTY_TARGET_V2;
+    res.target = DIFFICULTY_TARGET;
     res.tx_count = m_core.get_blockchain_storage().get_total_transactions() - res.height; //without coinbase
     res.tx_pool_size = m_core.get_pool_transactions_count();
     res.alt_blocks_count = m_core.get_blockchain_storage().get_alternative_blocks_count();
@@ -1919,7 +1923,7 @@ namespace cryptonote
       res.status = "Error checking for updates";
       return true;
     }
-    if (tools::vercmp(version.c_str(), MONERO_VERSION) <= 0)
+    if (tools::vercmp(version.c_str(), SUMOKOIN_VERSION) <= 0)
     {
       res.update = false;
       res.status = CORE_RPC_STATUS_OK;
